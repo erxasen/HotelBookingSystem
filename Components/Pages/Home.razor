@@ -1,0 +1,129 @@
+﻿
+@page "/"
+@rendermode InteractiveServer
+
+<PageTitle>Hotel Booking System</PageTitle>
+
+<div class="container py-5">
+    <div class="text-center mb-5">
+        <h1 class="display-4 fw-bold">🏨 Hotel Booking</h1>
+        <p class="lead">Find your perfect hotel at the best price</p>
+    </div>
+
+    <div class="card shadow-sm p-4 mb-5">
+        <h3>Find a Hotel</h3>
+        <div class="row g-3">
+            <div class="col-md-8">
+                <input class="form-control"
+                       placeholder="Enter city or hotel name"
+                       @bind="searchText" />
+            </div>
+            <div class="col-md-4">
+                <button class="btn btn-primary w-100"
+                        @onclick="SearchHotels">
+                    Search Hotels
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <h2 class="mb-4">Available Hotels</h2>
+
+    <div class="row g-4">
+        @foreach (var hotel in filteredHotels)
+        {
+            <div class="col-md-4">
+                <div class="card h-100 shadow-sm">
+                    <img src="@hotel.Image"
+                         class="card-img-top"
+                         alt="@hotel.Name"
+                         style="height:220px;object-fit:cover" />
+
+                    <div class="card-body">
+                        <h4>@hotel.Name</h4>
+                        <p>📍 @hotel.City</p>
+                        <p>⭐ @hotel.Rating / 5</p>
+                        <h5 class="text-primary">
+                            $@hotel.Price / night
+                        </h5>
+                        <a href="/booking" class="btn btn-success w-100">
+                           Book Now
+                        </a>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+
+    @if (!filteredHotels.Any())
+    {
+        <p class="text-center mt-4">
+            No hotels found.
+        </p>
+    }
+
+    @if (selectedHotel != null)
+    {
+        <div class="alert alert-success mt-4">
+            You selected @selectedHotel.Name.
+            Booking functionality is coming next!
+        </div>
+    }
+</div>
+
+@code {
+    private string searchText = "";
+    private string appliedSearch = "";
+    private Hotel? selectedHotel;
+
+    private List<Hotel> hotels = new()
+    {
+        new Hotel {
+            Name = "Grand Astana Hotel",
+            City = "Astana",
+            Price = 120,
+            Rating = 4.8,
+            Image = "https://images.unsplash.com/photo-1566073771259-6a8506099945?w=800"
+        },
+        new Hotel {
+            Name = "Almaty Luxury Resort",
+            City = "Almaty",
+            Price = 180,
+            Rating = 4.9,
+            Image = "https://images.unsplash.com/photo-1582719508461-905c673771fd?w=800"
+        },
+        new Hotel {
+            Name = "Mountain View Hotel",
+            City = "Shymkent",
+            Price = 95,
+            Rating = 4.6,
+            Image = "https://images.unsplash.com/photo-1571896349842-33c89424de2d?w=800"
+        }
+    };
+
+    private IEnumerable<Hotel> filteredHotels =>
+        hotels.Where(h =>
+            string.IsNullOrWhiteSpace(appliedSearch) ||
+            h.Name.Contains(appliedSearch, StringComparison.OrdinalIgnoreCase) ||
+            h.City.Contains(appliedSearch, StringComparison.OrdinalIgnoreCase));
+
+    private void SearchHotels()
+    {
+        appliedSearch = searchText.Trim();
+        selectedHotel = null;
+    }
+
+    private void SelectHotel(Hotel hotel)
+    {
+        selectedHotel = hotel;
+    }
+
+    private class Hotel
+    {
+        public string Name { get; set; } = "";
+        public string City { get; set; } = "";
+        public int Price { get; set; }
+        public double Rating { get; set; }
+        public string Image { get; set; } = "";
+    }
+}
