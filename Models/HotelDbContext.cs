@@ -1,9 +1,10 @@
 using HotelBookingSystem.Models;
+using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 
 namespace HotelBookingSystem.Data;
 
-public class HotelDbContext : DbContext
+public class HotelDbContext : IdentityDbContext<ApplicationUser>
 {
     public HotelDbContext(DbContextOptions<HotelDbContext> options)
         : base(options)
@@ -12,9 +13,18 @@ public class HotelDbContext : DbContext
 
     public DbSet<Hotel> Hotels => Set<Hotel>();
     public DbSet<Booking> Bookings => Set<Booking>();
+    public DbSet<Room> Rooms => Set<Room>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        // Обязательно первой строкой: настраивает таблицы Identity
+        base.OnModelCreating(modelBuilder);
+
+        // Номер комнаты уникален внутри одного отеля
+        modelBuilder.Entity<Room>()
+            .HasIndex(r => new { r.HotelId, r.Number })
+            .IsUnique();
+
         modelBuilder.Entity<Hotel>().HasData(
             new Hotel
             {

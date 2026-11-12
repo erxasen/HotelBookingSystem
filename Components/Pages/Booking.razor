@@ -106,12 +106,16 @@
     private bool bookingConfirmed = false;
     private string errorMessage = "";
 
-    private List<HotelInfo> hotels = new()
-    {
-        new("Grand Astana Hotel", 120),
-        new("Almaty Luxury Resort", 180),
-        new("Mountain View Hotel", 95)
-    };
+ private List<HotelInfo> hotels = new();
+
+protected override async Task OnInitializedAsync()
+{
+    await using var db = await DbFactory.CreateDbContextAsync();
+    hotels = await db.Hotels
+        .OrderBy(h => h.Name)
+        .Select(h => new HotelInfo(h.Name, h.Price))
+        .ToListAsync();
+}
 
     private decimal TotalPrice
     {
@@ -131,57 +135,69 @@
 
     
     private async Task ConfirmBooking()
+{
+    errorMessage = "";
+
+    if (booking.CheckIn.Date < DateTime.Today)
     {
-        errorMessage = "";
-
-        if (booking.CheckIn.Date < DateTime.Today)
-        {
-            errorMessage = "Check-in date cannot be in the past.";
-            return;
-        }
-
-        if (booking.CheckOut <= booking.CheckIn)
-        {
-            errorMessage = "Check-out must be after check-in.";
-            return;
-        }
-
-        try
-        {
-            await using var db = await DbFactory.CreateDbContextAsync();
-
-            var hotel = await db.Hotels
-                .FirstOrDefaultAsync(h => h.Name == booking.HotelName);
-
-            if (hotel == null)
-            {
-                errorMessage = "Hotel not found.";
-                return;
-            }
-
-         var newBooking = new HotelBookingSystem.Models.Booking
-            {
-              HotelId = hotel.Id,
-              FullName = booking.FullName,
-              Email = booking.Email,
-              CheckIn = booking.CheckIn,
-              CheckOut = booking.CheckOut,
-              Guests = booking.Guests,
-              TotalPrice = hotel.Price *
-                (booking.CheckOut - booking.CheckIn).Days
-            };
-
-            db.Bookings.Add(newBooking);
-            await db.SaveChangesAsync();
-
-            bookingConfirmed = true;
-        }
-        catch
-        {
-            errorMessage = "Could not save booking. Please try again.";
-        }
+        errorMessage = "Check-in date cannot be in the past.";
+        return;
     }
 
+    if (booking.CheckOut <= booking.CheckIn)
+    {
+        errorMessage = "Check-out must be after check-in.";
+        return;
+    }
+
+    try
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+
+        var hotel = await db.Hotels
+            .FirstOrDefaultAsync(h => h.Name == booking.HotelName);
+
+        if (hotel == null)
+        {
+            errorMessage = "Hotel not found.";
+            return;
+        }
+
+        var checkIn = booking.CheckIn.Date;
+        var checkOut = booking.CheckOut.Date;
+
+        bool isTaken = await db.Bookings.AnyAsync(b =>
+            b.HotelId == hotel.Id &&
+            b.CheckIn < checkOut &&
+            checkIn < b.CheckOut);
+
+        if (isTaken)
+        {
+            errorMessage = "These dates are already booked for this hotel. Please choose other dates.";
+            return;
+        }
+
+        var newBooking = new HotelBookingSystem.Models.Booking
+        {
+            HotelId = hotel.Id,
+            FullName = booking.FullName,
+            Email = booking.Email,
+            CheckIn = checkIn,
+            CheckOut = checkOut,
+            Guests = booking.Guests,
+            TotalPrice = hotel.Price * (checkOut - checkIn).Days
+        };
+
+        db.Bookings.Add(newBooking);
+        await db.SaveChangesAsync();
+
+        bookingConfirmed = true;
+    }
+    catch
+    {
+        errorMessage = "Could not save booking. Please try again.";
+    }
+}
 
     private void NewBooking()
     {

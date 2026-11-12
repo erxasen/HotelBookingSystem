@@ -10,4 +10,5 @@ public class Hotel
     public string Image { get; set; } = "";
 
     public List<Booking> Bookings { get; set; } = new();
+    public List<Room> Rooms { get; set; } = new();
 }

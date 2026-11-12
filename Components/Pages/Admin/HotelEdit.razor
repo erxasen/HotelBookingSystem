@@ -1,0 +1,175 @@
+@page "/admin/hotels/new"
+@page "/admin/hotels/{Id:int}/edit"
+@attribute [Authorize(Roles = AppRoles.Admin)]
+@using System.ComponentModel.DataAnnotations
+@using HotelBookingSystem.Data
+@using HotelBookingSystem.Models
+@using Microsoft.EntityFrameworkCore
+@inject IDbContextFactory<HotelDbContext> DbFactory
+@inject NavigationManager Navigation
+
+<PageTitle>@(IsNew ? "Add hotel" : "Edit hotel")</PageTitle>
+
+<div class="container py-4" style="max-width:720px">
+    <h1 class="fw-bold mb-4">@(IsNew ? "Add hotel" : "Edit hotel")</h1>
+
+    @if (notFound)
+    {
+        <div class="alert alert-danger">Hotel not found.</div>
+        <a href="admin/hotels" class="btn btn-primary">Back to hotels</a>
+    }
+    else
+    {
+        <div class="card shadow-sm p-4">
+            <EditForm Model="input" OnValidSubmit="SaveAsync">
+                <DataAnnotationsValidator />
+
+                @if (!string.IsNullOrEmpty(errorMessage))
+                {
+                    <div class="alert alert-danger">@errorMessage</div>
+                }
+
+                <div class="mb-3">
+                    <label class="form-label">Name</label>
+                    <InputText class="form-control" @bind-Value="input.Name" />
+                    <ValidationMessage For="() => input.Name" class="text-danger" />
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">City</label>
+                    <InputText class="form-control" @bind-Value="input.City" />
+                    <ValidationMessage For="() => input.City" class="text-danger" />
+                </div>
+
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">Price per night ($)</label>
+                        <InputNumber class="form-control" @bind-Value="input.Price" step="0.01" />
+                        <ValidationMessage For="() => input.Price" class="text-danger" />
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">Rating (0–5)</label>
+                        <InputNumber class="form-control" @bind-Value="input.Rating" step="0.1" />
+                        <ValidationMessage For="() => input.Rating" class="text-danger" />
+                    </div>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">Image URL</label>
+                    <InputText class="form-control" @bind-Value="input.Image" placeholder="https://..." />
+                    <ValidationMessage For="() => input.Image" class="text-danger" />
+                </div>
+
+                @if (!string.IsNullOrWhiteSpace(input.Image))
+                {
+                    <img src="@input.Image" alt="Preview" class="img-fluid rounded mb-3"
+                         style="max-height:200px;object-fit:cover" />
+                }
+
+                <div class="d-flex gap-2">
+                    <button type="submit" class="btn btn-success">@(IsNew ? "Create hotel" : "Save changes")</button>
+                    <a href="admin/hotels" class="btn btn-outline-secondary">Cancel</a>
+                </div>
+            </EditForm>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter]
+    public int Id { get; set; }
+
+    private bool IsNew => Id == 0;
+
+    private HotelInput input = new();
+    private string? errorMessage;
+    private bool notFound;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (IsNew)
+            return;
+
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var hotel = await db.Hotels.AsNoTracking().FirstOrDefaultAsync(h => h.Id == Id);
+
+        if (hotel is null)
+        {
+            notFound = true;
+            return;
+        }
+
+        input = new HotelInput
+        {
+            Name = hotel.Name,
+            City = hotel.City,
+            Price = hotel.Price,
+            Rating = hotel.Rating,
+            Image = hotel.Image
+        };
+    }
+
+    private async Task SaveAsync()
+    {
+        errorMessage = null;
+        await using var db = await DbFactory.CreateDbContextAsync();
+
+        var name = input.Name.Trim();
+
+        // Booking-страница ищет отель по названию, поэтому названия должны быть уникальны.
+        var nameTaken = await db.Hotels.AnyAsync(h => h.Name == name && h.Id != Id);
+        if (nameTaken)
+        {
+            errorMessage = $"A hotel named \"{name}\" already exists.";
+            return;
+        }
+
+        Hotel hotel;
+        if (IsNew)
+        {
+            hotel = new Hotel();
+            db.Hotels.Add(hotel);
+        }
+        else
+        {
+            var existing = await db.Hotels.FindAsync(Id);
+            if (existing is null)
+            {
+                notFound = true;
+                return;
+            }
+            hotel = existing;
+        }
+
+        hotel.Name = name;
+        hotel.City = input.City.Trim();
+        hotel.Price = input.Price;
+        hotel.Rating = input.Rating;
+        hotel.Image = input.Image.Trim();
+
+        await db.SaveChangesAsync();
+        Navigation.NavigateTo("admin/hotels");
+    }
+
+    private sealed class HotelInput
+    {
+        [Required(ErrorMessage = "Name is required.")]
+        [StringLength(100)]
+        public string Name { get; set; } = "";
+
+        [Required(ErrorMessage = "City is required.")]
+        [StringLength(100)]
+        public string City { get; set; } = "";
+
+        [Range(1, 100000, ErrorMessage = "Price must be between 1 and 100000.")]
+        public decimal Price { get; set; }
+
+        [Range(0, 5, ErrorMessage = "Rating must be between 0 and 5.")]
+        public double Rating { get; set; }
+
+        [Required(ErrorMessage = "Image URL is required.")]
+        [Url(ErrorMessage = "Enter a valid URL (https://...).")]
+        [StringLength(500)]
+        public string Image { get; set; } = "";
+    }
+}

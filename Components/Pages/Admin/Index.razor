@@ -1,0 +1,43 @@
+@page "/admin"
+@attribute [Authorize(Roles = AppRoles.Admin)]
+@using HotelBookingSystem.Data
+@using Microsoft.EntityFrameworkCore
+@inject IDbContextFactory<HotelDbContext> DbFactory
+
+<PageTitle>Admin panel</PageTitle>
+
+<div class="container py-4">
+    <h1 class="fw-bold mb-4">Admin panel</h1>
+
+    <div class="row g-4 mb-4">
+        <div class="col-md-4">
+            <div class="card shadow-sm p-3 text-center">
+                <div class="display-6">@hotelCount</div>
+                <div class="text-muted">Hotels</div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card shadow-sm p-3 text-center">
+                <div class="display-6">@bookingCount</div>
+                <div class="text-muted">Bookings</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="list-group">
+        <a href="admin/hotels" class="list-group-item list-group-item-action">🏨 Manage hotels</a>
+        <div class="list-group-item disabled">🛏 Manage rooms (next step)</div>
+    </div>
+</div>
+
+@code {
+    private int hotelCount;
+    private int bookingCount;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        hotelCount = await db.Hotels.CountAsync();
+        bookingCount = await db.Bookings.CountAsync();
+    }
+}
