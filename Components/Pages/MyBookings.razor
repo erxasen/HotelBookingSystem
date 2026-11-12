@@ -1,0 +1,143 @@
+
+@page "/my-bookings"
+@rendermode InteractiveServer
+@using HotelBookingSystem.Data
+@using Microsoft.EntityFrameworkCore
+@inject IDbContextFactory<HotelDbContext> DbFactory
+
+<PageTitle>My Bookings</PageTitle>
+
+<div class="container py-5">
+    <h1 class="fw-bold mb-3">My Bookings</h1>
+    <p class="text-muted">Manage hotel reservations</p>
+
+    @if (!string.IsNullOrEmpty(errorMessage))
+    {
+        <div class="alert alert-danger">
+            @errorMessage
+        </div>
+    }
+
+    @if (loading)
+    {
+        <p>Loading bookings...</p>
+    }
+    else if (bookings.Count == 0)
+    {
+        <div class="alert alert-info">
+            No bookings found.
+        </div>
+
+        <a href="/booking" class="btn btn-primary">
+            Make a Booking
+        </a>
+    }
+    else
+    {
+        <div class="table-responsive">
+            <table class="table table-striped table-hover">
+                <thead class="table-dark">
+                    <tr>
+                        <th>ID</th>
+                        <th>Hotel</th>
+                        <th>Guest</th>
+                        <th>Check-in</th>
+                        <th>Check-out</th>
+                        <th>Guests</th>
+                        <th>Total</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+
+                <tbody>
+                    @foreach (var booking in bookings)
+                    {
+                        <tr>
+                            <td>@booking.Id</td>
+                            <td>@booking.Hotel.Name</td>
+                            <td>@booking.FullName</td>
+                            <td>@booking.CheckIn.ToShortDateString()</td>
+                            <td>@booking.CheckOut.ToShortDateString()</td>
+                            <td>@booking.Guests</td>
+                            <td>$@booking.TotalPrice</td>
+                            <td>
+                                <button class="btn btn-danger btn-sm"
+                                        disabled="@deleting"
+                                        @onclick="() => CancelBooking(booking.Id)">
+                                    Cancel
+                                </button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+
+@code {
+    private List<HotelBookingSystem.Models.Booking> bookings = new();
+
+    private bool loading = true;
+    private bool deleting = false;
+    private string errorMessage = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadBookings();
+    }
+
+    private async Task LoadBookings()
+    {
+        try
+        {
+            await using var db =
+                await DbFactory.CreateDbContextAsync();
+
+            bookings = await db.Bookings
+                .AsNoTracking()
+                .Include(b => b.Hotel)
+                .OrderByDescending(b => b.Id)
+                .ToListAsync();
+
+            errorMessage = "";
+        }
+        catch
+        {
+            errorMessage = "Could not load bookings.";
+        }
+        finally
+        {
+            loading = false;
+        }
+    }
+
+    private async Task CancelBooking(int id)
+    {
+        deleting = true;
+
+        try
+        {
+            await using var db =
+                await DbFactory.CreateDbContextAsync();
+
+            var booking = await db.Bookings.FindAsync(id);
+
+            if (booking != null)
+            {
+                db.Bookings.Remove(booking);
+                await db.SaveChangesAsync();
+            }
+
+            await LoadBookings();
+        }
+        catch
+        {
+            errorMessage = "Could not cancel booking.";
+        }
+        finally
+        {
+            deleting = false;
+        }
+    }
+}
