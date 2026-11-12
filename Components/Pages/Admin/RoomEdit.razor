@@ -1,0 +1,186 @@
+@page "/admin/hotels/{HotelId:int}/rooms/new"
+@page "/admin/hotels/{HotelId:int}/rooms/{Id:int}/edit"
+@attribute [Authorize(Roles = AppRoles.Admin)]
+@using System.ComponentModel.DataAnnotations
+@using HotelBookingSystem.Data
+@using HotelBookingSystem.Models
+@using Microsoft.EntityFrameworkCore
+@inject IDbContextFactory<HotelDbContext> DbFactory
+@inject NavigationManager Navigation
+
+<PageTitle>@(IsNew ? "Add room" : "Edit room")</PageTitle>
+
+<div class="container py-4" style="max-width:640px">
+    @if (notFound)
+    {
+        <div class="alert alert-danger">Hotel or room not found.</div>
+        <a href="admin/hotels" class="btn btn-primary">Back to hotels</a>
+    }
+    else
+    {
+        <h1 class="fw-bold mb-1">@(IsNew ? "Add room" : "Edit room")</h1>
+        <p class="text-muted mb-4">Hotel: @hotelName</p>
+
+        <div class="card shadow-sm p-4">
+            <EditForm Model="input" OnValidSubmit="SaveAsync">
+                <DataAnnotationsValidator />
+
+                @if (!string.IsNullOrEmpty(errorMessage))
+                {
+                    <div class="alert alert-danger">@errorMessage</div>
+                }
+
+                <div class="mb-3">
+                    <label class="form-label">Room number</label>
+                    <InputText class="form-control" @bind-Value="input.Number" placeholder="e.g. 101" />
+                    <ValidationMessage For="() => input.Number" class="text-danger" />
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">Type</label>
+                    <InputSelect class="form-select" @bind-Value="input.Type">
+                        <option value="Standard">Standard</option>
+                        <option value="Deluxe">Deluxe</option>
+                        <option value="Suite">Suite</option>
+                    </InputSelect>
+                </div>
+
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">Capacity (guests)</label>
+                        <InputNumber class="form-control" @bind-Value="input.Capacity" />
+                        <ValidationMessage For="() => input.Capacity" class="text-danger" />
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">Price per night ($)</label>
+                        <InputNumber class="form-control" @bind-Value="input.PricePerNight" step="0.01" />
+                        <ValidationMessage For="() => input.PricePerNight" class="text-danger" />
+                    </div>
+                </div>
+
+                <div class="form-check mb-3">
+                    <InputCheckbox class="form-check-input" @bind-Value="input.IsActive" id="active" />
+                    <label class="form-check-label" for="active">Active (visible for booking)</label>
+                </div>
+
+                <div class="d-flex gap-2">
+                    <button type="submit" class="btn btn-success">@(IsNew ? "Create room" : "Save changes")</button>
+                    <a href="admin/hotels/@HotelId/rooms" class="btn btn-outline-secondary">Cancel</a>
+                </div>
+            </EditForm>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter]
+    public int HotelId { get; set; }
+
+    [Parameter]
+    public int Id { get; set; }
+
+    private bool IsNew => Id == 0;
+
+    private RoomInput input = new();
+    private string hotelName = "";
+    private string? errorMessage;
+    private bool notFound;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        notFound = false;
+        errorMessage = null;
+        input = new RoomInput();
+
+        await using var db = await DbFactory.CreateDbContextAsync();
+
+        var hotel = await db.Hotels.AsNoTracking().FirstOrDefaultAsync(h => h.Id == HotelId);
+        if (hotel is null)
+        {
+            notFound = true;
+            return;
+        }
+        hotelName = hotel.Name;
+
+        if (IsNew)
+            return;
+
+        var room = await db.Rooms.AsNoTracking()
+            .FirstOrDefaultAsync(r => r.Id == Id && r.HotelId == HotelId);
+
+        if (room is null)
+        {
+            notFound = true;
+            return;
+        }
+
+        input = new RoomInput
+        {
+            Number = room.Number,
+            Type = room.Type,
+            Capacity = room.Capacity,
+            PricePerNight = room.PricePerNight,
+            IsActive = room.IsActive
+        };
+    }
+
+    private async Task SaveAsync()
+    {
+        errorMessage = null;
+        await using var db = await DbFactory.CreateDbContextAsync();
+
+        var number = input.Number.Trim();
+
+        var numberTaken = await db.Rooms
+            .AnyAsync(r => r.HotelId == HotelId && r.Number == number && r.Id != Id);
+
+        if (numberTaken)
+        {
+            errorMessage = $"Room {number} already exists in this hotel.";
+            return;
+        }
+
+        Room room;
+        if (IsNew)
+        {
+            room = new Room { HotelId = HotelId };
+            db.Rooms.Add(room);
+        }
+        else
+        {
+            var existing = await db.Rooms.FirstOrDefaultAsync(r => r.Id == Id && r.HotelId == HotelId);
+            if (existing is null)
+            {
+                notFound = true;
+                return;
+            }
+            room = existing;
+        }
+
+        room.Number = number;
+        room.Type = input.Type;
+        room.Capacity = input.Capacity;
+        room.PricePerNight = input.PricePerNight;
+        room.IsActive = input.IsActive;
+
+        await db.SaveChangesAsync();
+        Navigation.NavigateTo($"admin/hotels/{HotelId}/rooms");
+    }
+
+    private sealed class RoomInput
+    {
+        [Required(ErrorMessage = "Room number is required.")]
+        [StringLength(20)]
+        public string Number { get; set; } = "";
+
+        public string Type { get; set; } = "Standard";
+
+        [Range(1, 10, ErrorMessage = "Capacity must be between 1 and 10.")]
+        public int Capacity { get; set; } = 2;
+
+        [Range(1, 100000, ErrorMessage = "Price must be between 1 and 100000.")]
+        public decimal PricePerNight { get; set; }
+
+        public bool IsActive { get; set; } = true;
+    }
+}

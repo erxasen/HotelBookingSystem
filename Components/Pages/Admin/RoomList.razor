@@ -1,0 +1,159 @@
+@page "/admin/hotels/{HotelId:int}/rooms"
+@attribute [Authorize(Roles = AppRoles.Admin)]
+@using HotelBookingSystem.Data
+@using Microsoft.EntityFrameworkCore
+@inject IDbContextFactory<HotelDbContext> DbFactory
+@inject IJSRuntime JS
+
+<PageTitle>Rooms</PageTitle>
+
+<div class="container py-4">
+    @if (notFound)
+    {
+        <div class="alert alert-danger">Hotel not found.</div>
+        <a href="admin/hotels" class="btn btn-primary">Back to hotels</a>
+    }
+    else
+    {
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h1 class="fw-bold mb-0">Rooms: @hotelName</h1>
+            <div>
+                <a href="admin/hotels" class="btn btn-outline-secondary me-2">← Hotels</a>
+                <a href="admin/hotels/@HotelId/rooms/new" class="btn btn-success">+ Add room</a>
+            </div>
+        </div>
+
+        @if (!string.IsNullOrEmpty(message))
+        {
+            <div class="alert alert-success">@message</div>
+        }
+
+        @if (rooms is null)
+        {
+            <p>Loading...</p>
+        }
+        else if (rooms.Count == 0)
+        {
+            <div class="alert alert-info">This hotel has no rooms yet. Add the first one.</div>
+        }
+        else
+        {
+            <div class="card shadow-sm">
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Number</th>
+                                <th>Type</th>
+                                <th>Capacity</th>
+                                <th>Price / night</th>
+                                <th>Status</th>
+                                <th class="text-end">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var room in rooms)
+                            {
+                                <tr class="@(room.IsActive ? "" : "text-muted")">
+                                    <td class="fw-semibold">@room.Number</td>
+                                    <td>@room.Type</td>
+                                    <td>👥 @room.Capacity</td>
+                                    <td>$@room.PricePerNight</td>
+                                    <td>
+                                        @if (room.IsActive)
+                                        {
+                                            <span class="badge bg-success">Active</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="badge bg-secondary">Hidden</span>
+                                        }
+                                    </td>
+                                    <td class="text-end">
+                                        <button class="btn btn-sm btn-outline-secondary me-1"
+                                                @onclick="() => ToggleActiveAsync(room)">
+                                            @(room.IsActive ? "Hide" : "Show")
+                                        </button>
+                                        <a href="admin/hotels/@HotelId/rooms/@room.Id/edit"
+                                           class="btn btn-sm btn-outline-primary me-1">Edit</a>
+                                        <button class="btn btn-sm btn-outline-danger"
+                                                @onclick="() => DeleteAsync(room)">
+                                            Delete
+                                        </button>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        }
+    }
+</div>
+
+@code {
+    [Parameter]
+    public int HotelId { get; set; }
+
+    private string hotelName = "";
+    private bool notFound;
+    private string? message;
+    private List<RoomRow>? rooms;
+
+    protected override async Task OnParametersSetAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+
+        var hotel = await db.Hotels.AsNoTracking().FirstOrDefaultAsync(h => h.Id == HotelId);
+        if (hotel is null)
+        {
+            notFound = true;
+            return;
+        }
+
+        notFound = false;
+        hotelName = hotel.Name;
+
+        rooms = await db.Rooms
+            .Where(r => r.HotelId == HotelId)
+            .OrderBy(r => r.Number)
+            .Select(r => new RoomRow(r.Id, r.Number, r.Type, r.Capacity, r.PricePerNight, r.IsActive))
+            .ToListAsync();
+    }
+
+    private async Task ToggleActiveAsync(RoomRow row)
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var room = await db.Rooms.FindAsync(row.Id);
+        if (room is null) return;
+
+        room.IsActive = !room.IsActive;
+        await db.SaveChangesAsync();
+
+        message = $"Room {room.Number} is now {(room.IsActive ? "active" : "hidden")}.";
+        await LoadAsync();
+    }
+
+    private async Task DeleteAsync(RoomRow row)
+    {
+        if (!await JS.InvokeAsync<bool>("confirm", $"Delete room {row.Number}?"))
+            return;
+
+        await using (var db = await DbFactory.CreateDbContextAsync())
+        {
+            var room = await db.Rooms.FindAsync(row.Id);
+            if (room is not null)
+            {
+                db.Rooms.Remove(room);
+                await db.SaveChangesAsync();
+            }
+        }
+
+        message = $"Room {row.Number} deleted.";
+        await LoadAsync();
+    }
+
+    private record RoomRow(int Id, string Number, string Type, int Capacity, decimal PricePerNight, bool IsActive);
+}

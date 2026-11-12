@@ -1,4 +1,6 @@
-﻿
+﻿@using HotelBookingSystem.Data
+@using Microsoft.EntityFrameworkCore
+@inject IDbContextFactory<HotelDbContext> DbFactory
 @page "/"
 @rendermode InteractiveServer
 
@@ -47,7 +49,7 @@
                             $@hotel.Price / night
                         </h5>
                         <a href="/booking" class="btn btn-success w-100">
-                           Book Now
+                            Book Now
                         </a>
                     </div>
                 </div>
@@ -61,47 +63,22 @@
             No hotels found.
         </p>
     }
-
-    @if (selectedHotel != null)
-    {
-        <div class="alert alert-success mt-4">
-            You selected @selectedHotel.Name.
-            Booking functionality is coming next!
-        </div>
-    }
 </div>
 
 @code {
     private string searchText = "";
     private string appliedSearch = "";
-    private Hotel? selectedHotel;
+    private List<HotelBookingSystem.Models.Hotel> hotels = new();
 
-    private List<Hotel> hotels = new()
+    protected override async Task OnInitializedAsync()
     {
-        new Hotel {
-            Name = "Grand Astana Hotel",
-            City = "Astana",
-            Price = 120,
-            Rating = 4.8,
-            Image = "https://images.unsplash.com/photo-1566073771259-6a8506099945?w=800"
-        },
-        new Hotel {
-            Name = "Almaty Luxury Resort",
-            City = "Almaty",
-            Price = 180,
-            Rating = 4.9,
-            Image = "https://images.unsplash.com/photo-1582719508461-905c673771fd?w=800"
-        },
-        new Hotel {
-            Name = "Mountain View Hotel",
-            City = "Shymkent",
-            Price = 95,
-            Rating = 4.6,
-            Image = "https://images.unsplash.com/photo-1571896349842-33c89424de2d?w=800"
-        }
-    };
+        await using var db = await DbFactory.CreateDbContextAsync();
+        hotels = await db.Hotels
+            .OrderBy(h => h.Name)
+            .ToListAsync();
+    }
 
-    private IEnumerable<Hotel> filteredHotels =>
+    private IEnumerable<HotelBookingSystem.Models.Hotel> filteredHotels =>
         hotels.Where(h =>
             string.IsNullOrWhiteSpace(appliedSearch) ||
             h.Name.Contains(appliedSearch, StringComparison.OrdinalIgnoreCase) ||
@@ -110,20 +87,5 @@
     private void SearchHotels()
     {
         appliedSearch = searchText.Trim();
-        selectedHotel = null;
-    }
-
-    private void SelectHotel(Hotel hotel)
-    {
-        selectedHotel = hotel;
-    }
-
-    private class Hotel
-    {
-        public string Name { get; set; } = "";
-        public string City { get; set; } = "";
-        public int Price { get; set; }
-        public double Rating { get; set; }
-        public string Image { get; set; } = "";
     }
 }
