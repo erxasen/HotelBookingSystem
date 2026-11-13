@@ -1,20 +1,33 @@
 
 @page "/my-bookings"
 @rendermode InteractiveServer
+@attribute [Authorize]
+@using System.Security.Claims
 @using HotelBookingSystem.Data
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
 @using Microsoft.EntityFrameworkCore
 @inject IDbContextFactory<HotelDbContext> DbFactory
+@inject AuthenticationStateProvider AuthStateProvider
+@inject IJSRuntime JS
 
 <PageTitle>My Bookings</PageTitle>
 
 <div class="container py-5">
     <h1 class="fw-bold mb-3">My Bookings</h1>
-    <p class="text-muted">Manage hotel reservations</p>
+    <p class="text-muted">Manage your hotel reservations.</p>
 
     @if (!string.IsNullOrEmpty(errorMessage))
     {
         <div class="alert alert-danger">
             @errorMessage
+        </div>
+    }
+
+    @if (!string.IsNullOrEmpty(successMessage))
+    {
+        <div class="alert alert-success">
+            @successMessage
         </div>
     }
 
@@ -25,7 +38,7 @@
     else if (bookings.Count == 0)
     {
         <div class="alert alert-info">
-            No bookings found.
+            You have no bookings yet.
         </div>
 
         <a href="/booking" class="btn btn-primary">
@@ -35,11 +48,12 @@
     else
     {
         <div class="table-responsive">
-            <table class="table table-striped table-hover">
+            <table class="table table-striped table-hover align-middle">
                 <thead class="table-dark">
                     <tr>
                         <th>ID</th>
                         <th>Hotel</th>
+                        <th>Room</th>
                         <th>Guest</th>
                         <th>Check-in</th>
                         <th>Check-out</th>
@@ -50,20 +64,21 @@
                 </thead>
 
                 <tbody>
-                    @foreach (var booking in bookings)
+                    @foreach (var item in bookings)
                     {
                         <tr>
-                            <td>@booking.Id</td>
-                            <td>@booking.Hotel.Name</td>
-                            <td>@booking.FullName</td>
-                            <td>@booking.CheckIn.ToShortDateString()</td>
-                            <td>@booking.CheckOut.ToShortDateString()</td>
-                            <td>@booking.Guests</td>
-                            <td>$@booking.TotalPrice</td>
+                            <td>@item.Id</td>
+                            <td>@item.Hotel.Name</td>
+                            <td>@(item.Room?.Number ?? "N/A")</td>
+                            <td>@item.FullName</td>
+                            <td>@item.CheckIn.ToShortDateString()</td>
+                            <td>@item.CheckOut.ToShortDateString()</td>
+                            <td>@item.Guests</td>
+                            <td>$@item.TotalPrice</td>
                             <td>
                                 <button class="btn btn-danger btn-sm"
                                         disabled="@deleting"
-                                        @onclick="() => CancelBooking(booking.Id)">
+                                        @onclick="() => CancelBooking(item.Id)">
                                     Cancel
                                 </button>
                             </td>
@@ -80,7 +95,19 @@
 
     private bool loading = true;
     private bool deleting = false;
+
     private string errorMessage = "";
+    private string successMessage = "";
+
+    private async Task<string?> GetCurrentUserId()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+
+        if (authState.User.Identity?.IsAuthenticated != true)
+            return null;
+
+        return authState.User.FindFirstValue(ClaimTypes.NameIdentifier);
+    }
 
     protected override async Task OnInitializedAsync()
     {
@@ -89,21 +116,34 @@
 
     private async Task LoadBookings()
     {
+        loading = true;
+
         try
         {
-            await using var db =
-                await DbFactory.CreateDbContextAsync();
+            var userId = await GetCurrentUserId();
+
+            if (string.IsNullOrEmpty(userId))
+            {
+                bookings.Clear();
+                errorMessage = "Please log in to view your bookings.";
+                return;
+            }
+
+            await using var db = await DbFactory.CreateDbContextAsync();
 
             bookings = await db.Bookings
                 .AsNoTracking()
                 .Include(b => b.Hotel)
+                .Include(b => b.Room)
+                .Where(b => b.UserId == userId)
                 .OrderByDescending(b => b.Id)
                 .ToListAsync();
 
             errorMessage = "";
         }
-        catch
+        catch (Exception ex)
         {
+            Console.WriteLine(ex);
             errorMessage = "Could not load bookings.";
         }
         finally
@@ -114,25 +154,54 @@
 
     private async Task CancelBooking(int id)
     {
+        if (deleting)
+            return;
+
+        var confirmed = await JS.InvokeAsync<bool>(
+            "confirm",
+            "Are you sure you want to cancel this booking?"
+        );
+
+        if (!confirmed)
+            return;
+
         deleting = true;
+        errorMessage = "";
+        successMessage = "";
 
         try
         {
-            await using var db =
-                await DbFactory.CreateDbContextAsync();
+            var userId = await GetCurrentUserId();
 
-            var booking = await db.Bookings.FindAsync(id);
-
-            if (booking != null)
+            if (string.IsNullOrEmpty(userId))
             {
-                db.Bookings.Remove(booking);
-                await db.SaveChangesAsync();
+                errorMessage = "Please log in.";
+                return;
             }
 
+            await using var db = await DbFactory.CreateDbContextAsync();
+
+            var booking = await db.Bookings
+                .FirstOrDefaultAsync(b =>
+                    b.Id == id &&
+                    b.UserId == userId);
+
+            if (booking is null)
+            {
+                errorMessage = "Booking not found or access denied.";
+                return;
+            }
+
+            db.Bookings.Remove(booking);
+            await db.SaveChangesAsync();
+
             await LoadBookings();
+
+            successMessage = "Booking cancelled successfully.";
         }
-        catch
+        catch (Exception ex)
         {
+            Console.WriteLine(ex);
             errorMessage = "Could not cancel booking.";
         }
         finally

@@ -1,22 +1,50 @@
-@using HotelBookingSystem.Data
-@using Microsoft.EntityFrameworkCore
-@inject IDbContextFactory<HotelDbContext> DbFactory
+
 @page "/booking"
 @rendermode InteractiveServer
+@attribute [Authorize]
 @using System.ComponentModel.DataAnnotations
+@using System.Security.Claims
+@using HotelBookingSystem.Data
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.EntityFrameworkCore
+@inject IDbContextFactory<HotelDbContext> DbFactory
+@inject AuthenticationStateProvider AuthStateProvider
 
 <PageTitle>Book a Hotel</PageTitle>
 
 <div class="container py-5">
     <h1 class="fw-bold mb-3">Hotel Reservation</h1>
-    <p class="text-muted">Complete your booking details below.</p>
+    <p class="text-muted">
+        Select a hotel, dates and an available room.
+    </p>
 
-    @if (!bookingConfirmed)
+    @if (bookingConfirmed)
+    {
+        <div class="alert alert-success p-4">
+            <h2>Booking Confirmed!</h2>
+            <p><strong>Hotel:</strong> @confirmedHotel</p>
+            <p><strong>Room:</strong> @confirmedRoom</p>
+            <p><strong>Guest:</strong> @booking.FullName</p>
+            <p><strong>Email:</strong> @booking.Email</p>
+            <p><strong>Check-in:</strong> @booking.CheckIn.ToShortDateString()</p>
+            <p><strong>Check-out:</strong> @booking.CheckOut.ToShortDateString()</p>
+            <p><strong>Guests:</strong> @booking.Guests</p>
+            <h4>Total: $@confirmedTotal</h4>
+
+            <button class="btn btn-primary mt-3"
+                    @onclick="NewBooking">
+                Make Another Booking
+            </button>
+        </div>
+    }
+    else
     {
         <div class="card shadow-sm p-4">
             <h3 class="mb-4">Booking Details</h3>
 
-            <EditForm Model="@booking" OnValidSubmit="ConfirmBooking"
+            <EditForm Model="@booking"
+                      OnValidSubmit="ConfirmBooking"
                       FormName="hotelBooking">
                 <DataAnnotationsValidator />
                 <ValidationSummary />
@@ -24,12 +52,13 @@
                 <div class="mb-3">
                     <label class="form-label">Select Hotel</label>
                     <InputSelect class="form-select"
-                                 @bind-Value="booking.HotelName">
-                        <option value="">Choose a hotel</option>
+                                 @bind-Value="booking.HotelId"
+                                 @bind-Value:after="ResetRooms">
+                        <option value="0">Choose a hotel</option>
                         @foreach (var hotel in hotels)
                         {
-                            <option value="@hotel.Name">
-                                @hotel.Name - $@hotel.Price/night
+                            <option value="@hotel.Id">
+                                @hotel.Name
                             </option>
                         }
                     </InputSelect>
@@ -51,180 +80,375 @@
                     <div class="col-md-6 mb-3">
                         <label class="form-label">Check-in Date</label>
                         <InputDate class="form-control"
-                                   @bind-Value="booking.CheckIn" />
+                                   @bind-Value="booking.CheckIn"
+                                   @bind-Value:after="ResetRooms" />
                     </div>
+
                     <div class="col-md-6 mb-3">
                         <label class="form-label">Check-out Date</label>
                         <InputDate class="form-control"
-                                   @bind-Value="booking.CheckOut" />
+                                   @bind-Value="booking.CheckOut"
+                                   @bind-Value:after="ResetRooms" />
                     </div>
                 </div>
 
                 <div class="mb-3">
                     <label class="form-label">Number of Guests</label>
                     <InputNumber class="form-control"
-                                 @bind-Value="booking.Guests" />
+                                 @bind-Value="booking.Guests"
+                                 @bind-Value:after="ResetRooms" />
                 </div>
+
+                <button type="button"
+                        class="btn btn-outline-primary w-100 mb-3"
+                        disabled="@loadingRooms"
+                        @onclick="FindAvailableRooms">
+                    @(loadingRooms ? "Searching..." : "Find Available Rooms")
+                </button>
+
+                @if (roomsSearched)
+                {
+                    @if (availableRooms.Count == 0)
+                    {
+                        <div class="alert alert-warning">
+                            No available rooms found for the selected dates and guests.
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="mb-3">
+                            <label class="form-label">Available Rooms</label>
+
+                            <InputSelect class="form-select"
+                                         @bind-Value="booking.RoomId">
+                                <option value="0">Choose a room</option>
+
+                                @foreach (var room in availableRooms)
+                                {
+                                    <option value="@room.Id">
+                                        Room @room.Number -
+                                        @room.Type -
+                                        Capacity: @room.Capacity -
+                                        $@room.PricePerNight/night
+                                    </option>
+                                }
+                            </InputSelect>
+                        </div>
+                    }
+                }
 
                 @if (!string.IsNullOrEmpty(errorMessage))
                 {
-                    <div class="alert alert-danger">@errorMessage</div>
+                    <div class="alert alert-danger">
+                        @errorMessage
+                    </div>
                 }
 
                 <div class="alert alert-info">
                     <strong>Total Price:</strong> $@TotalPrice
                 </div>
 
-                <button type="submit" class="btn btn-success w-100">
-                    Confirm Booking
+                <button type="submit"
+                        class="btn btn-success w-100"
+                        disabled="@saving">
+                    @(saving ? "Saving..." : "Confirm Booking")
                 </button>
             </EditForm>
-        </div>
-    }
-    else
-    {
-        <div class="alert alert-success p-4">
-            <h2>Booking Confirmed!</h2>
-            <p><strong>Hotel:</strong> @booking.HotelName</p>
-            <p><strong>Guest:</strong> @booking.FullName</p>
-            <p><strong>Email:</strong> @booking.Email</p>
-            <p><strong>Check-in:</strong> @booking.CheckIn.ToShortDateString()</p>
-            <p><strong>Check-out:</strong> @booking.CheckOut.ToShortDateString()</p>
-            <p><strong>Guests:</strong> @booking.Guests</p>
-            <h4>Total: $@TotalPrice</h4>
-
-            <button class="btn btn-primary mt-3"
-                    @onclick="NewBooking">
-                Make Another Booking
-            </button>
         </div>
     }
 </div>
 
 @code {
     private BookingModel booking = new();
-    private bool bookingConfirmed = false;
+    private List<HotelInfo> hotels = new();
+    private List<RoomInfo> availableRooms = new();
+
+    private bool bookingConfirmed;
+    private bool roomsSearched;
+    private bool loadingRooms;
+    private bool saving;
+
     private string errorMessage = "";
+    private string confirmedHotel = "";
+    private string confirmedRoom = "";
+    private decimal confirmedTotal;
 
- private List<HotelInfo> hotels = new();
+    protected override async Task OnInitializedAsync()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
 
-protected override async Task OnInitializedAsync()
-{
-    await using var db = await DbFactory.CreateDbContextAsync();
-    hotels = await db.Hotels
-        .OrderBy(h => h.Name)
-        .Select(h => new HotelInfo(h.Name, h.Price))
-        .ToListAsync();
-}
+        hotels = await db.Hotels
+            .AsNoTracking()
+            .OrderBy(h => h.Name)
+            .Select(h => new HotelInfo(h.Id, h.Name))
+            .ToListAsync();
+    }
 
     private decimal TotalPrice
     {
         get
         {
-            var hotel = hotels.FirstOrDefault(h =>
-                h.Name == booking.HotelName);
+            var room = availableRooms
+                .FirstOrDefault(r => r.Id == booking.RoomId);
 
-            if (hotel == null) return 0;
+            if (room is null)
+                return 0;
 
-            int nights = Math.Max(0,
-                (booking.CheckOut - booking.CheckIn).Days);
+            var nights = Math.Max(
+                0,
+                (booking.CheckOut.Date - booking.CheckIn.Date).Days);
 
-            return hotel.Price * nights;
+            return room.PricePerNight * nights;
         }
     }
 
-    
+    private void ResetRooms()
+    {
+        availableRooms.Clear();
+        booking.RoomId = 0;
+        roomsSearched = false;
+        errorMessage = "";
+    }
+
+    private bool ValidateDates()
+    {
+        if (booking.HotelId <= 0)
+        {
+            errorMessage = "Please select a hotel.";
+            return false;
+        }
+
+        if (booking.CheckIn.Date < DateTime.Today)
+        {
+            errorMessage = "Check-in date cannot be in the past.";
+            return false;
+        }
+
+        if (booking.CheckOut.Date <= booking.CheckIn.Date)
+        {
+            errorMessage = "Check-out must be after check-in.";
+            return false;
+        }
+
+        if (booking.Guests < 1 || booking.Guests > 10)
+        {
+            errorMessage = "Guests must be between 1 and 10.";
+            return false;
+        }
+
+        return true;
+    }
+
+    private async Task FindAvailableRooms()
+    {
+        errorMessage = "";
+        availableRooms.Clear();
+        booking.RoomId = 0;
+        roomsSearched = false;
+
+        if (!ValidateDates())
+            return;
+
+        loadingRooms = true;
+
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+
+            var checkIn = booking.CheckIn.Date;
+            var checkOut = booking.CheckOut.Date;
+
+            availableRooms = await db.Rooms
+                .AsNoTracking()
+                .Where(r =>
+                    r.HotelId == booking.HotelId &&
+                    r.IsActive &&
+                    r.Capacity >= booking.Guests &&
+                    !db.Bookings.Any(b =>
+                        b.RoomId == r.Id &&
+                        b.CheckIn < checkOut &&
+                        checkIn < b.CheckOut))
+                .OrderBy(r => r.Number)
+                .Select(r => new RoomInfo(
+                    r.Id,
+                    r.Number,
+                    r.Type,
+                    r.Capacity,
+                    r.PricePerNight))
+                .ToListAsync();
+
+            roomsSearched = true;
+        }
+        
+        catch (Exception ex)
+        {
+            errorMessage = $"Could not load available rooms: {ex.Message}";
+            Console.WriteLine(ex.ToString());
+        }
+
+        finally
+        {
+            loadingRooms = false;
+        }
+    }
+
     private async Task ConfirmBooking()
-{
-    errorMessage = "";
-
-    if (booking.CheckIn.Date < DateTime.Today)
     {
-        errorMessage = "Check-in date cannot be in the past.";
-        return;
-    }
+        errorMessage = "";
 
-    if (booking.CheckOut <= booking.CheckIn)
-    {
-        errorMessage = "Check-out must be after check-in.";
-        return;
-    }
+        if (saving)
+            return;
 
-    try
-    {
-        await using var db = await DbFactory.CreateDbContextAsync();
+        if (!ValidateDates())
+            return;
 
-        var hotel = await db.Hotels
-            .FirstOrDefaultAsync(h => h.Name == booking.HotelName);
-
-        if (hotel == null)
+        if (!roomsSearched || booking.RoomId <= 0)
         {
-            errorMessage = "Hotel not found.";
+            errorMessage = "Please find and select an available room.";
             return;
         }
 
-        var checkIn = booking.CheckIn.Date;
-        var checkOut = booking.CheckOut.Date;
+        var selectedRoom = availableRooms
+            .FirstOrDefault(r => r.Id == booking.RoomId);
 
-        bool isTaken = await db.Bookings.AnyAsync(b =>
-            b.HotelId == hotel.Id &&
-            b.CheckIn < checkOut &&
-            checkIn < b.CheckOut);
-
-        if (isTaken)
+        if (selectedRoom is null)
         {
-            errorMessage = "These dates are already booked for this hotel. Please choose other dates.";
+            errorMessage = "Please select a valid room.";
             return;
         }
 
-        var newBooking = new HotelBookingSystem.Models.Booking
+        var authState = await AuthStateProvider
+            .GetAuthenticationStateAsync();
+
+        var userId = authState.User
+            .FindFirstValue(ClaimTypes.NameIdentifier);
+
+        if (string.IsNullOrEmpty(userId))
         {
-            HotelId = hotel.Id,
-            FullName = booking.FullName,
-            Email = booking.Email,
-            CheckIn = checkIn,
-            CheckOut = checkOut,
-            Guests = booking.Guests,
-            TotalPrice = hotel.Price * (checkOut - checkIn).Days
-        };
+            errorMessage = "Please log in to make a booking.";
+            return;
+        }
 
-        db.Bookings.Add(newBooking);
-        await db.SaveChangesAsync();
+        saving = true;
 
-        bookingConfirmed = true;
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+
+            var checkIn = booking.CheckIn.Date;
+            var checkOut = booking.CheckOut.Date;
+
+            await using var transaction =
+                await db.Database.BeginTransactionAsync(
+                    System.Data.IsolationLevel.Serializable);
+
+            var room = await db.Rooms
+                .FirstOrDefaultAsync(r =>
+                    r.Id == booking.RoomId &&
+                    r.HotelId == booking.HotelId &&
+                    r.IsActive &&
+                    r.Capacity >= booking.Guests);
+
+            if (room is null)
+            {
+                errorMessage = "This room is no longer available.";
+                return;
+            }
+
+            var isTaken = await db.Bookings.AnyAsync(b =>
+                b.RoomId == room.Id &&
+                b.CheckIn < checkOut &&
+                checkIn < b.CheckOut);
+
+            if (isTaken)
+            {
+                errorMessage = "This room is already booked for these dates.";
+                return;
+            }
+
+            var hotel = await db.Hotels
+                .FirstOrDefaultAsync(h => h.Id == booking.HotelId);
+
+            if (hotel is null)
+            {
+                errorMessage = "Hotel not found.";
+                return;
+            }
+
+            var total = room.PricePerNight *
+                (checkOut - checkIn).Days;
+
+            var newBooking = new HotelBookingSystem.Models.Booking
+            {
+                HotelId = hotel.Id,
+                RoomId = room.Id,
+                UserId = userId,
+                FullName = booking.FullName.Trim(),
+                Email = booking.Email.Trim(),
+                CheckIn = checkIn,
+                CheckOut = checkOut,
+                Guests = booking.Guests,
+                TotalPrice = total,
+                CreatedAt = DateTime.UtcNow
+            };
+
+            db.Bookings.Add(newBooking);
+            await db.SaveChangesAsync();
+            await transaction.CommitAsync();
+
+            confirmedHotel = hotel.Name;
+            confirmedRoom = room.Number;
+            confirmedTotal = total;
+            bookingConfirmed = true;
+        }
+        catch (Exception)
+        {
+            errorMessage = "Could not save booking. Please try again.";
+        }
+        finally
+        {
+            saving = false;
+        }
     }
-    catch
-    {
-        errorMessage = "Could not save booking. Please try again.";
-    }
-}
 
     private void NewBooking()
     {
         booking = new BookingModel();
+        availableRooms.Clear();
         bookingConfirmed = false;
+        roomsSearched = false;
         errorMessage = "";
+        confirmedTotal = 0;
     }
 
-    private record HotelInfo(string Name, decimal Price);
+    private record HotelInfo(int Id, string Name);
+
+    private record RoomInfo(
+        int Id,
+        string Number,
+        string Type,
+        int Capacity,
+        decimal PricePerNight);
 
     private class BookingModel
     {
-        [Required(ErrorMessage = "Please select a hotel.")]
-        public string HotelName { get; set; } = "";
+        [Range(1, int.MaxValue, ErrorMessage = "Please select a hotel.")]
+        public int HotelId { get; set; }
+
+        public int RoomId { get; set; }
 
         [Required(ErrorMessage = "Full name is required.")]
         public string FullName { get; set; } = "";
 
-        [Required]
+        [Required(ErrorMessage = "Email is required.")]
         [EmailAddress]
         public string Email { get; set; } = "";
 
-        [Required]
-        public DateTime CheckIn { get; set; } = DateTime.Today.AddDays(1);
+        public DateTime CheckIn { get; set; } =
+            DateTime.Today.AddDays(1);
 
-        [Required]
-        public DateTime CheckOut { get; set; } = DateTime.Today.AddDays(2);
+        public DateTime CheckOut { get; set; } =
+            DateTime.Today.AddDays(2);
 
         [Range(1, 10, ErrorMessage = "Guests must be between 1 and 10.")]
         public int Guests { get; set; } = 1;
