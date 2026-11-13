@@ -20,6 +20,28 @@ public class HotelDbContext : IdentityDbContext<ApplicationUser>
         // Обязательно первой строкой: настраивает таблицы Identity
         base.OnModelCreating(modelBuilder);
 
+
+        modelBuilder.Entity<Booking>()
+            .HasOne(b => b.Room)
+            .WithMany()
+            .HasForeignKey(b => b.RoomId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<Booking>()
+            .HasOne(b => b.User)
+            .WithMany()
+            .HasForeignKey(b => b.UserId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<Booking>()
+            .HasIndex(b => new
+            {
+                b.RoomId,
+                b.CheckIn,
+                b.CheckOut
+            });
+
+
         // Номер комнаты уникален внутри одного отеля
         modelBuilder.Entity<Room>()
             .HasIndex(r => new { r.HotelId, r.Number })

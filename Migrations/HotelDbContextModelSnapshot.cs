@@ -114,12 +114,22 @@ namespace HotelBookingSystem.Migrations
                     b.Property<int>("HotelId")
                         .HasColumnType("INTEGER");
 
+                    b.Property<int?>("RoomId")
+                        .HasColumnType("INTEGER");
+
                     b.Property<decimal>("TotalPrice")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("UserId")
                         .HasColumnType("TEXT");
 
                     b.HasKey("Id");
 
                     b.HasIndex("HotelId");
+
+                    b.HasIndex("UserId");
+
+                    b.HasIndex("RoomId", "CheckIn", "CheckOut");
 
                     b.ToTable("Bookings");
                 });
@@ -352,7 +362,21 @@ namespace HotelBookingSystem.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
+                    b.HasOne("HotelBookingSystem.Models.Room", "Room")
+                        .WithMany()
+                        .HasForeignKey("RoomId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("HotelBookingSystem.Models.ApplicationUser", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.Navigation("Hotel");
+
+                    b.Navigation("Room");
+
+                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("HotelBookingSystem.Models.Room", b =>

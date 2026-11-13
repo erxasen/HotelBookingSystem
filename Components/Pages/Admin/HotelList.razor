@@ -1,3 +1,4 @@
+
 @page "/admin/hotels"
 @attribute [Authorize(Roles = AppRoles.Admin)]
 @using HotelBookingSystem.Data
@@ -11,8 +12,12 @@
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h1 class="fw-bold mb-0">Hotels</h1>
         <div>
-            <a href="admin" class="btn btn-outline-secondary me-2">← Admin panel</a>
-            <a href="admin/hotels/new" class="btn btn-success">+ Add hotel</a>
+            <a href="/admin" class="btn btn-outline-secondary me-2">
+                ← Admin panel
+            </a>
+            <a href="/admin/hotels/new" class="btn btn-success">
+                + Add hotel
+            </a>
         </div>
     </div>
 
@@ -27,7 +32,9 @@
     }
     else if (rows.Count == 0)
     {
-        <div class="alert alert-info">No hotels yet. Add the first one.</div>
+        <div class="alert alert-info">
+            No hotels yet. Add the first one.
+        </div>
     }
     else
     {
@@ -50,7 +57,8 @@
                         {
                             <tr>
                                 <td>
-                                    <img src="@row.Image" alt="@row.Name"
+                                    <img src="@row.Image"
+                                         alt="@row.Name"
                                          style="width:80px;height:55px;object-fit:cover;border-radius:6px" />
                                 </td>
                                 <td class="fw-semibold">@row.Name</td>
@@ -59,13 +67,24 @@
                                 <td>⭐ @row.Rating</td>
                                 <td>@row.BookingsCount</td>
                                 <td class="text-end">
-                                    <a href="admin/hotels/@row.Id/edit" class="btn btn-sm btn-outline-primary me-1">Edit</a>
-                                    <button class="btn btn-sm btn-outline-danger"
-                                            disabled="@(row.BookingsCount > 0)"
-                                            title="@(row.BookingsCount > 0 ? "Hotels with bookings cannot be deleted" : "Delete hotel")"
-                                            @onclick="() => DeleteAsync(row)">
-                                        Delete
-                                    </button>
+                                    <div class="d-flex justify-content-end gap-2">
+                                        <a href="@($"/admin/hotels/{row.Id}/rooms")"
+                                           class="btn btn-sm btn-outline-success">
+                                            Rooms
+                                        </a>
+
+                                        <a href="@($"/admin/hotels/{row.Id}/edit")"
+                                           class="btn btn-sm btn-outline-primary">
+                                            Edit
+                                        </a>
+
+                                        <button class="btn btn-sm btn-outline-danger"
+                                                disabled="@(row.BookingsCount > 0)"
+                                                title="@(row.BookingsCount > 0 ? "Hotels with bookings cannot be deleted" : "Delete hotel")"
+                                                @onclick="() => DeleteAsync(row)">
+                                            Delete
+                                        </button>
+                                    </div>
                                 </td>
                             </tr>
                         }
@@ -81,7 +100,10 @@
     private string? message;
     private string messageClass = "alert-success";
 
-    protected override async Task OnInitializedAsync() => await LoadAsync();
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+    }
 
     private async Task LoadAsync()
     {
@@ -89,7 +111,14 @@
 
         rows = await db.Hotels
             .OrderBy(h => h.Name)
-            .Select(h => new HotelRow(h.Id, h.Name, h.City, h.Price, h.Rating, h.Image, h.Bookings.Count))
+            .Select(h => new HotelRow(
+                h.Id,
+                h.Name,
+                h.City,
+                h.Price,
+                h.Rating,
+                h.Image,
+                h.Bookings.Count))
             .ToListAsync();
     }
 
@@ -97,24 +126,39 @@
     {
         if (row.BookingsCount > 0)
         {
-            Show($"Cannot delete \"{row.Name}\": it has {row.BookingsCount} booking(s).", isError: true);
+            Show(
+                $"Cannot delete \"{row.Name}\": it has {row.BookingsCount} booking(s).",
+                isError: true);
             return;
         }
 
-        if (!await JS.InvokeAsync<bool>("confirm", $"Delete hotel \"{row.Name}\"?"))
-            return;
-
-        await using (var db = await DbFactory.CreateDbContextAsync())
+        if (!await JS.InvokeAsync<bool>(
+            "confirm", $"Delete hotel \"{row.Name}\"?"))
         {
+            return;
+        }
+
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+
             var hotel = await db.Hotels.FindAsync(row.Id);
+
             if (hotel is not null)
             {
                 db.Hotels.Remove(hotel);
                 await db.SaveChangesAsync();
             }
+
+            Show($"Hotel \"{row.Name}\" deleted.", isError: false);
+        }
+        catch (DbUpdateException)
+        {
+            Show(
+                "Cannot delete this hotel because it has related records.",
+                isError: true);
         }
 
-        Show($"Hotel \"{row.Name}\" deleted.", isError: false);
         await LoadAsync();
     }
 
@@ -124,5 +168,12 @@
         messageClass = isError ? "alert-danger" : "alert-success";
     }
 
-    private record HotelRow(int Id, string Name, string City, decimal Price, double Rating, string Image, int BookingsCount);
+    private record HotelRow(
+        int Id,
+        string Name,
+        string City,
+        decimal Price,
+        double Rating,
+        string Image,
+        int BookingsCount);
 }
