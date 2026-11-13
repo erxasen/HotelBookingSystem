@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
+builder.Services.AddScoped<HotelBookingSystem.Services.BookingService>();
 
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();

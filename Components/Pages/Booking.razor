@@ -1,4 +1,4 @@
-
+@inject HotelBookingSystem.Services.BookingService BookingService
 @page "/booking"
 @rendermode InteractiveServer
 @attribute [Authorize]
@@ -239,59 +239,48 @@
         return true;
     }
 
-    private async Task FindAvailableRooms()
+    
+private async Task FindAvailableRooms()
+{
+    errorMessage = "";
+    availableRooms.Clear();
+    booking.RoomId = 0;
+    roomsSearched = false;
+
+    if (!ValidateDates())
+        return;
+
+    loadingRooms = true;
+
+    try
     {
-        errorMessage = "";
-        availableRooms.Clear();
-        booking.RoomId = 0;
-        roomsSearched = false;
+        var rooms = await BookingService.GetAvailableRoomsAsync(
+            booking.HotelId,
+            booking.CheckIn,
+            booking.CheckOut,
+            booking.Guests);
 
-        if (!ValidateDates())
-            return;
+        availableRooms = rooms
+            .Select(r => new RoomInfo(
+                r.Id,
+                r.Number,
+                r.Type,
+                r.Capacity,
+                r.PricePerNight))
+            .ToList();
 
-        loadingRooms = true;
-
-        try
-        {
-            await using var db = await DbFactory.CreateDbContextAsync();
-
-            var checkIn = booking.CheckIn.Date;
-            var checkOut = booking.CheckOut.Date;
-
-            availableRooms = await db.Rooms
-                .AsNoTracking()
-                .Where(r =>
-                    r.HotelId == booking.HotelId &&
-                    r.IsActive &&
-                    r.Capacity >= booking.Guests &&
-                    !db.Bookings.Any(b =>
-                        b.RoomId == r.Id &&
-                        b.CheckIn < checkOut &&
-                        checkIn < b.CheckOut))
-                .OrderBy(r => r.Number)
-                .Select(r => new RoomInfo(
-                    r.Id,
-                    r.Number,
-                    r.Type,
-                    r.Capacity,
-                    r.PricePerNight))
-                .ToListAsync();
-
-            roomsSearched = true;
-        }
-        
-        catch (Exception ex)
-        {
-            errorMessage = $"Could not load available rooms: {ex.Message}";
-            Console.WriteLine(ex.ToString());
-        }
-
-        finally
-        {
-            loadingRooms = false;
-        }
+        roomsSearched = true;
     }
-
+    catch (Exception ex)
+    {
+        errorMessage = "Could not load available rooms.";
+        Console.WriteLine(ex);
+    }
+    finally
+    {
+        loadingRooms = false;
+    }
+}
     private async Task ConfirmBooking()
     {
         errorMessage = "";
