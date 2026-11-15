@@ -20,7 +20,7 @@ builder.Services.AddDbContextFactory<HotelDbContext>(options =>
 builder.Services.AddScoped(sp =>
     sp.GetRequiredService<IDbContextFactory<HotelDbContext>>().CreateDbContext());
 
-// ---- Аутентификация и роли ----
+// Аутентификация и роли 
 builder.Services.AddCascadingAuthenticationState();
 builder.Services.AddAuthorization();
 
